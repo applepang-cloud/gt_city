@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../game/gt_city_game.dart';
 import '../game/constants.dart';
 import '../game/vehicle.dart';
@@ -113,18 +114,30 @@ class _GameHudState extends State<GameHud> {
               ),
             ),
           ),
-          // Controls hint
+          // Audio mute toggle
           Positioned(
-            bottom: 10, left: 0, right: 0,
-            child: Center(
+            left: 255, top: 10,
+            child: GestureDetector(
+              onTap: () async {
+                await g.audio.toggle();
+                if (mounted) setState(() {});
+              },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0x55000000), borderRadius: BorderRadius.circular(4)),
-                child: const Text(
-                  'WASD:Move  F:Enter/Exit Car  Space:Shoot  Q/E:Weapon  M:Mission  Shift:Run',
-                  style: TextStyle(color: Colors.white54, fontSize: 9),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xAA000000),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF888888)),
                 ),
+                child: Text(g.audio.enabled ? '🔊' : '🔇', style: const TextStyle(fontSize: 14)),
               ),
+            ),
+          ),
+          // On-screen control keys
+          Positioned(
+            bottom: 8, left: 0, right: 0,
+            child: Center(
+              child: FittedBox(fit: BoxFit.scaleDown, child: _buildControlKeys()),
             ),
           ),
           // Joystick visual
@@ -385,6 +398,87 @@ class _GameHudState extends State<GameHud> {
       ),
     );
   }
+
+  Widget _buildControlKeys() {
+    final k = g.heldKeys;
+    bool h(LogicalKeyboardKey a, [LogicalKeyboardKey? b]) =>
+        k.contains(a) || (b != null && k.contains(b));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0x66000000),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // WASD diamond
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _key('W', active: h(LogicalKeyboardKey.keyW, LogicalKeyboardKey.arrowUp)),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                _key('A', active: h(LogicalKeyboardKey.keyA, LogicalKeyboardKey.arrowLeft)),
+                _key('S', active: h(LogicalKeyboardKey.keyS, LogicalKeyboardKey.arrowDown)),
+                _key('D', active: h(LogicalKeyboardKey.keyD, LogicalKeyboardKey.arrowRight)),
+              ]),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                _key('Space', active: h(LogicalKeyboardKey.space), w: 50),
+                _lbl('Shoot'),
+                _key('Shift', active: h(LogicalKeyboardKey.shiftLeft, LogicalKeyboardKey.shiftRight), w: 46),
+                _lbl('Run'),
+              ]),
+              const SizedBox(height: 4),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                _key('F', active: h(LogicalKeyboardKey.keyF)),
+                _lbl('Car'),
+                _key('Q', active: h(LogicalKeyboardKey.keyQ)),
+                _key('E', active: h(LogicalKeyboardKey.keyE)),
+                _lbl('Weapon'),
+                _key('M', active: h(LogicalKeyboardKey.keyM)),
+                _lbl('Mission'),
+              ]),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _key(String label, {bool active = false, double w = 26}) {
+    return Container(
+      margin: const EdgeInsets.all(2),
+      width: w, height: 26,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: active ? const Color(0xDDFFCC00) : const Color(0x99202020),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: active ? const Color(0xFFFFEE88) : Colors.white30,
+          width: 1.5,
+        ),
+      ),
+      child: Text(label,
+          style: TextStyle(
+            color: active ? Colors.black : Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+          )),
+    );
+  }
+
+  Widget _lbl(String s) => Padding(
+        padding: const EdgeInsets.only(right: 8, left: 2),
+        child: Text(s, style: const TextStyle(color: Colors.white70, fontSize: 9)),
+      );
 
   Widget _buildMinimap() {
     return Container(

@@ -12,6 +12,8 @@ import 'pickup.dart';
 import 'wanted.dart';
 import 'projectile.dart';
 import 'mission.dart';
+import 'audio.dart';
+import 'sprites.dart';
 
 class GtCityGame extends FlameGame with KeyboardEvents {
   final CityMap cityMap = CityMap();
@@ -19,10 +21,13 @@ class GtCityGame extends FlameGame with KeyboardEvents {
   final WantedSystem wanted = WantedSystem();
   final WeaponInventory weapons = WeaponInventory();
   final MissionSystem missions = MissionSystem();
+  final AudioManager audio = AudioManager();
   bool showMissionMenu = false;
 
   // Player state
   double playerX = 0, playerY = 0, playerAngle = 0;
+  double playerWalkPhase = 0;
+  double _shootSndCd = 0;
   double playerHealth = kPlayerMaxHealth;
   double playerArmor = 0;
   int playerMoney = 0;
@@ -56,8 +61,12 @@ class GtCityGame extends FlameGame with KeyboardEvents {
   String? messageText;
   double messageTimer = 0;
 
+  // Expose held keys for the on-screen control display
+  Set<LogicalKeyboardKey> get heldKeys => _keys;
+
   @override
   Future<void> onLoad() async {
+    await audio.init();
     cityMap.generate();
 
     // Spawn player at center of map
@@ -182,6 +191,12 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     _updateCamera();
     _updateMessage(cdt);
     enterVehicleCooldown = max(0, enterVehicleCooldown - cdt);
+    _shootSndCd = max(0, _shootSndCd - cdt);
+
+    // Audio beds
+    audio.setEngine(playerInVehicle,
+        (playerVehicle?.speed.abs() ?? 0) / kCarMaxSpeed);
+    audio.setSiren(wanted.level >= 1);
 
     hudNotifier.value++;
   }
@@ -236,6 +251,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
         playerX = nx;
         playerY = ny;
       }
+      playerWalkPhase += spd * dt * 0.045;
     }
 
     // Collect money from dead peds nearby
@@ -311,6 +327,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
       final dy = p.y - ty;
       if (dx * dx + dy * dy < 20 * 20) {
         p.takeDamage(damage);
+        audio.sfx('punch', volume: 0.7);
         if (!p.alive) {
           _onPedKilled(p);
         }
@@ -325,6 +342,10 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     final ex = playerX + cos(a) * info.range;
     final ey = playerY + sin(a) * info.range;
     trails.add(BulletTrail(playerX, playerY, ex, ey));
+    if (_shootSndCd <= 0) {
+      audio.sfx('shoot', volume: 0.55);
+      _shootSndCd = 0.06;
+    }
     wanted.addHeat(2);
     _fleePedsNear(playerX, playerY, 200);
 
@@ -364,6 +385,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
       speed: info.projectileSpeed, damage: info.damage,
       blastRadius: info.blastRadius, sourceWeapon: wt,
     ));
+    audio.sfx('shoot', volume: 0.5);
     wanted.addHeat(5);
     _fleePedsNear(playerX, playerY, 300);
   }
@@ -408,6 +430,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
 
   void _onVehicleDestroyed(Vehicle v) {
     explosions.add(Explosion(v.x, v.y, 50));
+    audio.sfx('explosion', volume: 1.0);
     if (v.info.isLawEnforcement) {
       wanted.onCopCarDestroyed();
     } else {
@@ -519,6 +542,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     p.exploded = true;
     if (p.blastRadius > 0) {
       explosions.add(Explosion(p.x, p.y, p.blastRadius));
+      audio.sfx('explosion', volume: 0.9);
       // Blast damage
       for (final ped in peds) {
         if (!ped.alive) continue;
@@ -561,6 +585,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
   void _collectPickup(Pickup pk) {
     pk.collected = true;
     pk.respawnTimer = 60;
+    audio.sfx('pickup', volume: 0.7);
     switch (pk.type) {
       case PickupType.health:
         playerHealth = min(kPlayerMaxHealth, playerHealth + pk.amount);
@@ -648,6 +673,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
       dmg -= absorbed;
     }
     playerHealth = max(0, playerHealth - dmg);
+    audio.sfx('hurt', volume: 0.6);
   }
 
   void _onPlayerDeath() {
@@ -748,6 +774,7 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     _keys.addAll(keysPressed);
 
     if (event is KeyDownEvent) {
+      audio.ensureStarted();
       if (event.logicalKey == LogicalKeyboardKey.keyF || event.logicalKey == LogicalKeyboardKey.enter) {
         tryEnterVehicle();
       }
@@ -949,26 +976,32 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     for (final p in peds) {
       if (!_inViewPoint(p.x, p.y, 30)) continue;
       if (!p.alive) {
-        // Dead ped
-        canvas.drawCircle(Offset(p.x, p.y), 5,
-          Paint()..color = const Color(0xFF883333));
+        // Blood pool + crumpled body
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset(p.x, p.y), width: 18, height: 14),
+          Paint()..color = const Color(0x66660000),
+        );
+        canvas.drawRect(
+          Rect.fromCenter(center: Offset(p.x, p.y), width: 11, height: 7),
+          Paint()..color = p.shirtColor..isAntiAlias = false,
+        );
         continue;
       }
       canvas.save();
       canvas.translate(p.x, p.y);
       canvas.rotate(p.angle);
-      // Body
-      canvas.drawCircle(Offset.zero, p.radius, Paint()..color = p.shirtColor);
-      // Head
-      canvas.drawCircle(Offset(p.radius * 0.5, 0), p.radius * 0.55,
-        Paint()..color = p.skinColor);
-      // Police hat
-      if (p.type == PedType.police) {
-        canvas.drawRect(
-          Rect.fromCenter(center: Offset(p.radius * 0.5, 0), width: 6, height: 4),
-          Paint()..color = const Color(0xFF1A1A4A),
-        );
-      }
+      drawTopDownChar(
+        canvas,
+        r: p.radius,
+        skin: p.skinColor,
+        hair: p.hairColor,
+        shirt: p.shirtColor,
+        pants: p.pantsColor,
+        walkPhase: p.walkPhase,
+        police: p.type == PedType.police,
+        armed: p.type == PedType.police && p.chasing,
+        gunColor: const Color(0xFF1A1A1A),
+      );
       canvas.restore();
     }
   }
@@ -979,28 +1012,19 @@ class GtCityGame extends FlameGame with KeyboardEvents {
     canvas.save();
     canvas.translate(playerX, playerY);
     canvas.rotate(playerAngle);
-    // Body
-    canvas.drawCircle(Offset.zero, kPlayerRadius, Paint()..color = kColorPlayer);
-    // Head
-    canvas.drawCircle(Offset(kPlayerRadius * 0.5, 0), kPlayerRadius * 0.55,
-      Paint()..color = const Color(0xFFDDBB99));
-    // Weapon indicator
     final w = weapons.current;
-    if (w.type != WeaponType.unarmed) {
-      canvas.drawRect(
-        Rect.fromCenter(center: Offset(kPlayerRadius + 4, 0), width: 8, height: 3),
-        Paint()..color = const Color(0xFF333333),
-      );
-    }
+    drawTopDownChar(
+      canvas,
+      r: kPlayerRadius,
+      skin: const Color(0xFFE0B98E),
+      hair: const Color(0xFF3A2410),
+      shirt: const Color(0xFF2E5FB0),
+      pants: const Color(0xFF20242E),
+      walkPhase: playerWalkPhase,
+      armed: w.type != WeaponType.unarmed,
+      gunColor: const Color(0xFF2A2A2A),
+    );
     canvas.restore();
-
-    // Direction indicator
-    if (!playerInVehicle) {
-      final ix = playerX + cos(playerAngle) * 20;
-      final iy = playerY + sin(playerAngle) * 20;
-      canvas.drawCircle(Offset(ix, iy), 2,
-        Paint()..color = const Color(0x88FFFFFF));
-    }
   }
 
   void _renderMissionMarker(Canvas canvas) {

@@ -15,6 +15,14 @@ final _shirtColors = [
   const Color(0xFFDDDD44), const Color(0xFFDD44DD), const Color(0xFF44DDDD),
   const Color(0xFFFFFFFF), const Color(0xFF333333), const Color(0xFFFF8800),
 ];
+final _hairColors = [
+  const Color(0xFF2A1A0A), const Color(0xFF4A3018), const Color(0xFF6B4A22),
+  const Color(0xFF1A1A1A), const Color(0xFF8A6A3A), const Color(0xFF555555),
+];
+final _pantsColors = [
+  const Color(0xFF2A3A5A), const Color(0xFF3A3A3A), const Color(0xFF4A3A2A),
+  const Color(0xFF2A2A2A), const Color(0xFF504030),
+];
 
 class Ped {
   double x, y, angle;
@@ -24,6 +32,9 @@ class Ped {
   PedType type;
   Color skinColor;
   Color shirtColor;
+  Color hairColor;
+  Color pantsColor;
+  double walkPhase = 0;
   double targetX, targetY;
   double stateTimer = 0;
   double fleeFromX = 0, fleeFromY = 0;
@@ -37,7 +48,9 @@ class Ped {
         targetX = x,
         targetY = y,
         skinColor = type == PedType.police ? const Color(0xFFDDBB99) : _skinColors[rng.nextInt(_skinColors.length)],
-        shirtColor = type == PedType.police ? kColorPolicePed : _shirtColors[rng.nextInt(_shirtColors.length)];
+        shirtColor = type == PedType.police ? const Color(0xFF2A3D7A) : _shirtColors[rng.nextInt(_shirtColors.length)],
+        hairColor = _hairColors[rng.nextInt(_hairColors.length)],
+        pantsColor = type == PedType.police ? const Color(0xFF1A2348) : _pantsColors[rng.nextInt(_pantsColors.length)];
 
   double get radius => kPedRadius;
   bool get alive => state != PedState.dead && health > 0;
@@ -74,6 +87,7 @@ class Ped {
     }
 
     if (speed.abs() > 0.1) {
+      walkPhase += speed * dt * 0.045;
       final nx = x + cos(angle) * speed * dt;
       final ny = y + sin(angle) * speed * dt;
       if (!map.isSolid(nx, ny, radius)) {
